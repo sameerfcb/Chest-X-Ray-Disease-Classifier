@@ -5,105 +5,95 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Model Accuracy](https://img.shields.io/badge/Accuracy-90.1%25-brightgreen.svg)]()
 [![Pneumonia Recall](https://img.shields.io/badge/Recall-96%25-brightgreen.svg)]()
-[![GitHub issues](https://img.shields.io/github/issues/sameerfcb/Chest-X-Ray-Disease-Classifier)](https://github.com/sameerfcb/Chest-X-Ray-Disease-Classifier/issues)
-[![GitHub stars](https://img.shields.io/github/stars/sameerfcb/Chest-X-Ray-Disease-Classifier)](https://github.com/sameerfcb/Chest-X-Ray-Disease-Classifier)
 
-A deep learning model for detecting pneumonia in chest X-rays. Uses ResNet50 with transfer learning and shows you where the model is looking via Grad-CAM heatmaps.
+Deep learning model for detecting pneumonia in chest X-rays. Trained on ResNet50 with some tweaks that actually worked really well. Also shows you where the model's looking using Grad-CAM, which is kinda cool for understanding why it makes certain predictions.
 
-## The numbers
+## Why I made this
 
-**90.1% accuracy** on 624 test images. More importantly, it catches **96% of pneumonia cases** — that's what actually matters clinically. ROC-AUC is 0.9647.
+Started working on this after realizing how hard it is to accurately spot pneumonia in X-rays. Baseline model was sitting at ~66% which... wasn't great. Played around with different approaches - data augmentation, fine-tuning strategies, better training - and managed to bump it up to 90.1%. The important thing though? It catches 96% of actual pneumonia cases. That matters way more than just raw accuracy when you're dealing with medical stuff.
 
-Breakdown:
-- Pneumonia recall: 96% (catches the cases)
-- Pneumonia precision: 89%
-- F1-score: 0.92
+## Results
 
-## What you get
+**90.1%** accuracy on 624 test images. But honestly the recall is what I'm proud of - **96%** of pneumonia cases get caught. ROC-AUC is 0.9647, which means the model's pretty good at distinguishing between the two classes without messing up too much.
 
-- **Web interface** — upload an X-ray, get a prediction instantly
-- **Heatmap visualization** — see which parts of the image the model paid attention to
-- **ResNet50 backbone** — transfer learned from ImageNet
-- **Proper pre-processing** — ImageNet normalization, data augmentation
-- **Clean training pipeline** — early stopping, learning rate scheduling, gradient clipping
+Quick breakdown:
+- 96% recall (catches pneumonia when it's there)
+- 89% precision (doesn't flag normal X-rays as pneumonia too often)
+- Only 15 false negatives out of 390 pneumonia cases (that's good)
 
-## Quick start
+## Getting it running
 
-Need Python 3.8+.
+Just need Python 3.8+. Clone and set up a virtual environment:
 
 ```bash
 git clone https://github.com/sameerfcb/Chest-X-Ray-Disease-Classifier.git
 cd Chest-X-Ray-Disease-Classifier
 python -m venv venv
-source venv/bin/activate  # or: venv\Scripts\activate (Windows)
+source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 python app.py
 ```
 
-Then open http://localhost:7860 in your browser. Upload an X-ray and you're done.
+Then open http://localhost:7860 and start uploading X-rays. The model spits out a prediction plus a heatmap showing which parts influenced the decision.
 
-To see the training pipeline:
-```bash
-jupyter notebook .devcontainer/d_classifier.ipynb
-```
+If you want to see how everything was trained, there's a Jupyter notebook in the `.devcontainer/` folder with the full pipeline.
 
-## How it works
+## The technical stuff
 
-**Backbone:** ResNet50 from ImageNet. We freeze the early layers (conv1, layer1-3) and fine-tune layer4 to adapt to X-rays. This balances keeping general knowledge with learning domain-specific patterns.
+I used ResNet50 as the backbone since it's been trained on ImageNet and already knows how to extract useful features. The trick was not freezing everything - I kept the first few layers frozen (they learn general stuff) but fine-tuned the last residual block to adapt to X-rays specifically.
 
-**Classification head:** Three-layer network:
-```
-2048 features → 1024 (batch norm + relu + dropout)
-   1024 → 512 (batch norm + relu + dropout)
-   512 → 1 (sigmoid for 0-1 predictions)
-```
-
-**Training:** Adam optimizer with different learning rates for different layers (1e-4 for layer4, 1e-3 for the head). Cosine annealing scheduler over 15 epochs with early stopping. Standard ImageNet normalization. Data augmentation: rotations, affine transforms, color jitter.
-
-## What improved from baseline
-
-Started at 66.7% accuracy. These changes helped:
-- Added ImageNet normalization (was missing)
-- Proper data augmentation
-- Fine-tuning layer4 instead of freezing everything
-- Better classification head with batch norm
-- Longer training with early stopping
-- Differential learning rates
-
-Ended up at **90.1%, +23.4% improvement**.
-
-## Results on test set
+The classification head is a 3-layer network:
 
 ```
-                ACTUAL
-              NORMAL  PNEUMONIA
-PRED  NORMAL    187        15
-      PNEUMONIA   47       375
+2048 → 1024 (batch norm + ReLU + dropout)
+ ↓
+1024 → 512 (batch norm + ReLU + dropout)
+ ↓
+512 → 1 (sigmoid)
 ```
 
-- 96% of pneumonia cases caught (375/390)
-- Only 15 false negatives (the misses)
-- 93% precision on normal cases
-- ROC-AUC 0.9647
+Nothing fancy but it works. Training uses Adam with different learning rates for different layers, cosine annealing over 15 epochs, and early stopping if validation doesn't improve. Images get normalized with ImageNet stats and some basic augmentation to avoid overfitting.
+
+## How I got from 66% to 90%
+
+Started with a baseline that wasn't doing much. Main issues were:
+- No normalization (just raw tensors)
+- No data augmentation
+- Fully frozen backbone (couldn't adapt to X-rays)
+- Weak 2-layer classification head
+- Only 5 epochs of training
+
+So I:
+1. Added proper ImageNet normalization
+2. Threw in decent data augmentation
+3. Unfroze layer4 for medical imaging adaptation
+4. Built a better 3-layer head with batch norm
+5. Trained for 15 epochs with validation monitoring
+6. Implemented differential learning rates
+
+Result: +23.4% improvement. Not bad.
 
 ## Using it
 
-### Via the web app
+### Web app
+
 ```bash
 python app.py
 ```
-Upload images at http://localhost:7860.
 
-### Via Python
+Open http://localhost:7860 in your browser and start uploading X-rays.
+
+### In Python
+
 ```python
 import torch
 from torchvision import models, transforms
 from PIL import Image
 
-# Setup
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
 
+# Load model
 model = models.resnet50(weights=None)
 model.fc = torch.nn.Sequential(
     torch.nn.Linear(2048, 1024),
@@ -130,82 +120,75 @@ image = Image.open('xray.jpg').convert('RGB')
 x = transform(image).unsqueeze(0)
 
 with torch.no_grad():
-    logit = model(x).item()
-    prob = torch.sigmoid(torch.tensor(logit)).item()
+    prob = torch.sigmoid(model(x)).item()
     label = "PNEUMONIA" if prob > 0.5 else "NORMAL"
     confidence = prob if label == "PNEUMONIA" else 1 - prob
 
 print(f"{label} ({confidence*100:.1f}%)")
 ```
 
-## Project layout
+## Project structure
 
 ```
 .
-├── app.py                  # Web interface
+├── app.py                  # Gradio web app
 ├── requirements.txt        # Dependencies
-├── xray_model_best.pth    # Weights (90.1% accuracy)
+├── xray_model_best.pth    # Best weights (use this one)
 ├── xray_model.pth         # Latest checkpoint
-├── README.md              # This file
 ├── .devcontainer/
-│   └── d_classifier.ipynb # Full training notebook
-└── flagged/               # Gradio cache
+│   └── d_classifier.ipynb # Full training code/notebook
+└── docs/
+    ├── ARCHITECTURE.md    # Technical deep dive
+    ├── TRAINING.md        # Training details
+    └── DEPLOYMENT.md      # How to deploy
 ```
 
 ## Data
 
-From [Kaggle](https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia). 5,800 training images, 1,000 validation, 600 test. Binary: Normal vs Pneumonia.
+Used the [Kaggle chest X-ray dataset](https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia). About 5,800 training images, 1,000 validation, 600 test. Just binary - normal or pneumonia.
 
-## Setup options
+## Setup
 
-**Local:** `pip install -r requirements.txt` and `python app.py`.
+**Local:** Install requirements and run `python app.py`. That's it.
 
-**Dev Container:** Have Docker? Open in VS Code and click "Reopen in Container".
+**Docker:** If you want everything containerized, just use the Dockerfile.
 
-**Codespaces:** [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/sameerfcb/Chest-X-Ray-Disease-Classifier)
+**Cloud:** Can deploy to Hugging Face Spaces or AWS if you want it publicly accessible.
 
-## Dependencies
+## Important stuff
 
-See `requirements.txt`. Main ones: PyTorch, Torchvision, Gradio, PyTorch-Grad-CAM, scikit-learn.
+Seriously - **don't use this for actual medical diagnosis.** It's a fun ML project, not an FDA-approved medical device. Model was trained on one specific dataset, there's no telling how it'll perform on different X-ray equipment or patient populations. Always let actual doctors make medical decisions.
 
-## Important
+Also trained on data from Kermany et al. (2018) which has its own limitations.
 
-**This is research/learning code, not a medical device.** Don't use for actual diagnosis. It's not FDA-approved and only trained on one dataset. Always consult healthcare professionals for real medical decisions.
+## What surprised me
 
-Model from Kermany et al., 2018.
+The Grad-CAM visualization honestly. When you see which parts of the X-ray the model focused on, it sometimes makes you realize it's looking at reasonable anatomical features. Other times you're like "why are you looking there?" but then you figure out the pattern anyway. Really helpful for building intuition about what the model's doing.
+
+Also how much data augmentation actually mattered. Thought the improvements would come from the architecture tweaks, but augmentation legit moved the needle.
+
+## What could be better
+
+- Validation on diverse datasets (different equipment, hospitals, etc)
+- Ensemble with other models
+- Multi-class classification (differentiate pneumonia types)
+- Batch inference pipeline
+- Confidence calibration
+- Some kind of active learning setup
+- Mobile deployment
 
 ## References
 
-- He et al. (2015) — Deep Residual Learning for Image Recognition (ResNet)
-- Selvaraju et al. (2016) — Grad-CAM: Visual Explanations from Deep Networks
+- He et al. (2015) - ResNet paper
+- Selvaraju et al. (2016) - Grad-CAM
+- Dataset creators: Kermany et al. (2018)
 
 ## License
 
-MIT.
-
-## What you'll learn
-
-- Transfer learning
-- Medical imaging classification
-- Data augmentation strategies
-- Model explainability
-- Building web interfaces with Gradio
-- Hyperparameter tuning
-- Production deployment
-
-## Ideas for extension
-
-- Multi-class (bacterial vs viral pneumonia)
-- Model ensemble
-- Batch processing
-- Mobile optimization
-- Confidence calibration
-
-## Author
-
-Sameer
+MIT. Do whatever with it.
 
 ---
 
-Last updated: March 21, 2026  
-Model v2.0 • 90.1% accuracy
+Built by Sameer  
+March 2026
+
