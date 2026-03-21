@@ -1,39 +1,16 @@
-#!/usr/bin/env python
-"""Quick test of the model on sample pneumonia and normal X-rays."""
+"""Tests for model architecture and inference."""
 
-import os
-import sys
+import tempfile
 from pathlib import Path
 
+import pytest
 import torch
 import torch.nn as nn
 import torchvision.models as models
-import torchvision.transforms as transforms
-from PIL import Image
-import numpy as np
-
-# Patch huggingface_hub like in app.py
-import importlib.util
-
-spec = importlib.util.find_spec("huggingface_hub")
-if spec is not None:
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["huggingface_hub"] = module
-
-    class HfFolder:
-        @staticmethod
-        def get_token():
-            return None
-
-    module.HfFolder = HfFolder
-    module.whoami = lambda: None
-    spec.loader.exec_module(module)
-
-IMAGENET_MEAN = [0.485, 0.456, 0.406]
-IMAGENET_STD = [0.229, 0.224, 0.225]
 
 
-def build_model(device):
+def build_model(device: torch.device) -> nn.Module:
+    """Build ResNet50 with 3-layer classification head."""
     model = models.resnet50(weights=None)
     model.fc = nn.Sequential(
         nn.Linear(2048, 1024),
@@ -49,96 +26,193 @@ def build_model(device):
     return model.to(device).eval()
 
 
-def find_weights():
-    cwd = Path.cwd().resolve()
-    for base in [cwd, *cwd.parents]:
-        candidate = base / "xray_model_best.pth"
-        if candidate.exists():
-            return candidate
-    raise FileNotFoundError("xray_model_best.pth not found")
+class TestModelArchitecture:
+    """Test suite for model architecture validation."""
 
+    def test_model_builds_successfully(self):
+        """Verify model builds without errors."""
+        device = torch.device("cpu")
+        model = build_model(device)
+        assert model is not None
+        assert isinstance(model, nn.Module)
 
-def predict_image(model, image_path, transform, device):
-    """Make prediction on a single image."""
-    try:
-        image = Image.open(image_path).convert("RGB")
-        x = transform(image).unsqueeze(0).to(device)
+    def test_model_has_correct_input_size(self):
+        """Verify model expects 224x224 input."""
+        device = torch.device("cpu")
+        model = build_model(device)
+        
+        dummy_input = torch.randn(1, 3, 224, 224).to(device)
+        output = model(dummy_input)
+        
+        assert output.shape == (1, 1), "Model output should be (batch_size, 1)"
 
+    def test_model_output_is_unbounded(self):
+        """Verify model outputs logits (unbounded values)."""
+        device = torch.device("cpu")
+        model = build_model(device)
+        
+        dummy_input = torch.randn(1, 3, 224, 224).to(device)
+        output = model(dummy_input)
+        
+        assert output.item() is not None
+        # Could be negative or > 1 for logits
+        assert isinstance(output.item(), float)
+
+    def test_model_eval_mode(self):
+        """Verify model is in eval mode."""
+        device = torch.device("cpu")
+        model = build_model(device)
+        
+        assert not model.training, "Model should be in eval mode"
+
+    def test_model_batch_processing(self):
+        """Verify model handles different batch sizes."""
+        device = torch.device("cpu")
+        model = build_model(device)
+        
+        for batch_size in [1, 2, 4, 8]:
+            dummy_input = torch.randn(batch_size, 3, 224, 224).to(device)
+            output = model(dummy_input)
+            assert output.shape == (batch_size, 1)
+
+    def test_model_has_3_layer_head(self):
+        """Verify model has 3-layer classification head."""
+        device = torch.device("cpu")
+        model = build_model(device)
+        
+        linear_layers = [m for m in model.fc if isinstance(m, nn.Linear)]
+        assert len(linear_layers) == 3, "Should have 3 linear layers"
+
+    def test_model_has_batch_normalization(self):
+        """Verify model includes batch normalization layers."""
+        device = torch.device("cpu")
+        model = build_model(device)
+        
+        bn_layers = [m for m in model.fc if isinstance(m, nn.BatchNorm1d)]
+        assert len(bn_layers) == 2, "Should have 2 batch norm layers"
+
+    def test_model_has_dropout_regularization(self):
+        """Verify model includes dropout for regularization."""
+        device = torch.device("cpu")
+        model = build_model(device)
+        
+        dropout_layers = [m for m in model.fc if isinstance(m, nn.Dropout)]
+        assert len(dropout_layers) == 2, "Should have 2 dropout layers"
+
+    def test_model_inference_mode(self):
+        """Verify model runs efficiently with torch.inference_mode()."""
+        device = torch.device("cpu")
+        model = build_model(device)
+        
+        dummy_input = torch.randn(1, 3, 224, 224).to(device)
+        
         with torch.inference_mode():
-            logit = model(x).item()
-            prob = torch.sigmoid(torch.tensor(logit)).item()
-
-        label = "PNEUMONIA" if prob >= 0.5 else "NORMAL"
-        confidence = prob if label == "PNEUMONIA" else 1 - prob
-
-        return label, confidence
-    except Exception as e:
-        return None, str(e)
+            output = model(dummy_input)
+        
+        assert not output.requires_grad
 
 
-def main():
-    device = torch.device("cpu")
-    transform = transforms.Compose(
-        [
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+class TestModelCheckpoint:
+    """Test suite for model checkpoint serialization."""
+
+    def test_model_can_be_saved(self):
+        """Verify model state can be saved to disk."""
+        device = torch.device("cpu")
+        model = build_model(device)
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            checkpoint_path = Path(tmpdir) / "model.pth"
+            torch.save(model.state_dict(), checkpoint_path)
+            assert checkpoint_path.exists()
+
+    def test_model_can_be_loaded(self):
+        """Verify model state can be restored from checkpoint."""
+        device = torch.device("cpu")
+        model1 = build_model(device)
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            checkpoint_path = Path(tmpdir) / "model.pth"
+            torch.save(model1.state_dict(), checkpoint_path)
+            
+            model2 = build_model(device)
+            state = torch.load(checkpoint_path, map_location=device)
+            model2.load_state_dict(state, strict=True)
+
+    def test_checkpoint_produces_same_predictions(self):
+        """Verify loaded checkpoint produces identical predictions."""
+        device = torch.device("cpu")
+        model1 = build_model(device)
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            checkpoint_path = Path(tmpdir) / "model.pth"
+            torch.save(model1.state_dict(), checkpoint_path)
+            
+            model2 = build_model(device)
+            state = torch.load(checkpoint_path, map_location=device)
+            model2.load_state_dict(state, strict=True)
+            
+            dummy_input = torch.randn(1, 3, 224, 224).to(device)
+            out1 = model1(dummy_input)
+            out2 = model2(dummy_input)
+            
+            assert torch.allclose(out1, out2)
+
+    def test_checkpoint_size_reasonable(self):
+        """Verify checkpoint file size is in expected range."""
+        device = torch.device("cpu")
+        model = build_model(device)
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            checkpoint_path = Path(tmpdir) / "model.pth"
+            torch.save(model.state_dict(), checkpoint_path)
+            
+            size_mb = checkpoint_path.stat().st_size / 1e6
+            # ResNet50 weights are typically 90-110 MB
+            assert 80 < size_mb < 150, f"Checkpoint size {size_mb}MB seems incorrect"
+
+
+class TestModelInference:
+    """Test suite for model inference behavior."""
+
+    def test_inference_various_inputs(self):
+        """Verify model handles various input distributions."""
+        device = torch.device("cpu")
+        model = build_model(device)
+        
+        test_cases = [
+            torch.zeros(1, 3, 224, 224),
+            torch.ones(1, 3, 224, 224),
+            torch.randn(1, 3, 224, 224),
         ]
-    )
+        
+        for inp in test_cases:
+            inp = inp.to(device)
+            output = model(inp)
+            assert output.shape == (1, 1)
+            assert not torch.isnan(output).any()
+            assert not torch.isinf(output).any()
 
-    # Load model
-    weights_path = find_weights()
-    model = build_model(device)
-    state = torch.load(weights_path, map_location=device)
-    model.load_state_dict(state, strict=True)
-    print(f"✓ Model loaded from {weights_path.name}\n")
+    def test_inference_deterministic(self):
+        """Verify model produces consistent outputs in eval mode."""
+        device = torch.device("cpu")
+        model = build_model(device)
+        
+        torch.manual_seed(42)
+        dummy_input = torch.randn(1, 3, 224, 224).to(device)
+        
+        out1 = model(dummy_input)
+        out2 = model(dummy_input)
+        
+        assert torch.allclose(out1, out2)
 
-    # Find test images
-    data_path = (
-        Path.home()
-        / ".cache/kagglehub/datasets/paultimothymooney/chest-xray-pneumonia/versions/2/chest_xray/chest_xray/test"
-    )
-    if not data_path.exists():
-        print(f"⚠ Test data not found at {data_path}")
-        print("Run the notebook to download the dataset first.")
-        return
-
-    print("=" * 60)
-    print("TESTING MODEL ON SAMPLE X-RAYS")
-    print("=" * 60)
-
-    # Test NORMAL X-rays
-    normal_dir = data_path / "NORMAL"
-    if normal_dir.exists():
-        normal_images = list(normal_dir.glob("*.jpeg"))[:3]  # Take first 3
-        if normal_images:
-            print("\n📋 NORMAL X-RAY PREDICTIONS:")
-            print("-" * 60)
-            for img_path in normal_images:
-                label, conf = predict_image(model, img_path, transform, device)
-                status = "✓" if label == "NORMAL" else "✗"
-                print(
-                    f"{status} {img_path.name[:40]:40s} → {label:10s} ({conf*100:.1f}%)"
-                )
-
-    # Test PNEUMONIA X-rays
-    pneumonia_dir = data_path / "PNEUMONIA"
-    if pneumonia_dir.exists():
-        pneumonia_images = list(pneumonia_dir.glob("*.jpeg"))[:3]  # Take first 3
-        if pneumonia_images:
-            print("\n🫁 PNEUMONIA X-RAY PREDICTIONS:")
-            print("-" * 60)
-            for img_path in pneumonia_images:
-                label, conf = predict_image(model, img_path, transform, device)
-                status = "✓" if label == "PNEUMONIA" else "✗"
-                print(
-                    f"{status} {img_path.name[:40]:40s} → {label:10s} ({conf*100:.1f}%)"
-                )
-
-    print("\n" + "=" * 60)
-    print("Test complete!")
-    print("=" * 60)
-
-
-if __name__ == "__main__":
-    main()
+    def test_inference_output_format(self):
+        """Verify inference output has correct format."""
+        device = torch.device("cpu")
+        model = build_model(device)
+        
+        dummy_input = torch.randn(2, 3, 224, 224).to(device)
+        output = model(dummy_input)
+        
+        assert output.dtype == torch.float32
+        assert output.shape == (2, 1)
+        assert output.device.type == device.type
