@@ -1,5 +1,13 @@
 # Chest X-Ray Pneumonia Classifier
 
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](https://pytorch.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Model Accuracy](https://img.shields.io/badge/Accuracy-90.1%25-brightgreen.svg)]()
+[![Pneumonia Recall](https://img.shields.io/badge/Recall-96%25-brightgreen.svg)]()
+[![GitHub issues](https://img.shields.io/github/issues/sameerfcb/Chest-X-Ray-Disease-Classifier)](https://github.com/sameerfcb/Chest-X-Ray-Disease-Classifier/issues)
+[![GitHub stars](https://img.shields.io/github/stars/sameerfcb/Chest-X-Ray-Disease-Classifier)](https://github.com/sameerfcb/Chest-X-Ray-Disease-Classifier)
+
 A deep learning model for detecting pneumonia in chest X-rays. Uses ResNet50 with transfer learning and shows you where the model is looking via Grad-CAM heatmaps.
 
 ## The numbers
