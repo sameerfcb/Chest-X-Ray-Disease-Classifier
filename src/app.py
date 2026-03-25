@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import cv2
 import numpy as np
 import streamlit as st
 import torch
@@ -8,9 +9,53 @@ import torchvision.models as models
 import torchvision.transforms as transforms
 from PIL import Image
 
-from grad_cam import GradCAM
-from grad_cam.utils.image import show_cam_on_image
-from grad_cam.utils.model_targets import ClassifierOutputTarget
+
+def compute_gradcam(
+    model: nn.Module, input_tensor: torch.Tensor, target_layer: nn.Module, device: torch.device
+) -> np.ndarray:
+    """
+    Compute Grad-CAM heatmap for interpretability.
+
+    Args:
+        model: Neural network model
+        input_tensor: Input image tensor (1, 3, 224, 224)
+        target_layer: Layer to visualize (usually last conv layer)
+        device: Device to compute on
+
+    Returns:
+        Grayscale CAM (224, 224) normalized to [0, 1]
+    """
+    input_tensor.requires_grad_(True)
+
+    # Forward pass
+    output = model(input_tensor)
+
+    # Get activations and gradients
+    target_layer.register_forward_hook(lambda m, i, o: setattr(m, "_activation", o.detach()))
+
+    # Backward pass for target class
+    model.zero_grad()
+    loss = output.sum()
+    loss.backward()
+
+    # Get activation maps and gradients
+    activation = target_layer._activation
+    gradients = input_tensor.grad
+
+    # Compute Grad-CAM
+    weights = gradients.mean(dim=(2, 3), keepdim=True)
+    cam = (weights * activation).sum(dim=1, keepdim=True)
+    cam = torch.relu(cam)
+
+    # Normalize to [0, 1]
+    cam_min = cam.min()
+    cam_max = cam.max()
+    if cam_max > cam_min:
+        cam = (cam - cam_min) / (cam_max - cam_min)
+
+    # Resize to input size
+    cam = cam.squeeze().cpu().numpy()
+    return (cam * 255).astype(np.uint8)
 
 
 def find_weights_path(filename: str = "xray_model.pth") -> Path:
@@ -154,8 +199,7 @@ visual explanations.
     state = torch.load(weights_path, map_location=device)
     model.load_state_dict(state, strict=True)
 
-    target_layers = [model.layer4[-1]]
-    cam = GradCAM(model=model, target_layers=target_layers)
+    target_layer = model.layer4[-1]
 
     def predict(image: np.ndarray):
         """
@@ -208,27 +252,27 @@ visual explanations.
             confidence = min(max(confidence, 0.5), 1.0)  # Clamp between 0.5 and 1.0
 
         # Generate Grad-CAM
-        model.zero_grad(set_to_none=True)
-        input_for_cam = input_tensor.detach().clone()
-        input_for_cam.requires_grad_(True)
-        grayscale_cam = cam(
-            input_tensor=input_for_cam,
-            targets=[ClassifierOutputTarget(0)],
-        )
+        model.eval()
+        grayscale_cam = compute_gradcam(model, input_tensor, target_layer, device)
 
         # Prepare original image for visualization
         rgb_img_original = np.array(original_img).astype(np.float32) / 255.0
 
         # Resize CAM to match original image size
-        cam_resized = Image.fromarray((grayscale_cam[0] * 255).astype(np.uint8)).resize(
-            original_size, Image.BILINEAR
-        )
-        cam_resized_array = np.array(cam_resized).astype(np.float32) / 255.0
+        cam_resized = cv2.resize(grayscale_cam, original_size)
+        cam_resized = cam_resized.astype(np.float32) / 255.0
 
-        # Generate heatmap with original image size
-        heatmap = show_cam_on_image(rgb_img_original, cam_resized_array, use_rgb=True)
+        # Generate heatmap with colormap
+        heatmap_cv = cv2.applyColorMap(grayscale_cam, cv2.COLORMAP_JET)
+        heatmap_cv = cv2.resize(heatmap_cv, original_size)
+        heatmap_rgb = cv2.cvtColor(heatmap_cv, cv2.COLOR_BGR2RGB)
 
-        return label, confidence, heatmap
+        # Blend heatmap with original image
+        heatmap_img = heatmap_rgb.astype(np.float32) / 255.0
+        combined = cv2.addWeighted(rgb_img_original, 0.6, heatmap_img, 0.4, 0)
+        combined = (combined * 255).astype(np.uint8)
+
+        return label, confidence, combined
 
     # Streamlit UI
     st.markdown("---")
