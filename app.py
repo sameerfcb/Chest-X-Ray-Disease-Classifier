@@ -34,40 +34,22 @@ from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 
 
 def find_weights_path(filename: str = "xray_model.pth") -> Path:
-    """Find model weights file by searching current and parent directories.
-
-    Searches the current working directory and all parent directories for
-    the specified model weights file. Prioritizes finding the best-trained
-    model checkpoint first, then falls back to the standard checkpoint.
-
-    Args:
-        filename (str): Name of the weights file to search for.
-                       Defaults to "xray_model.pth".
-
-    Returns:
-        Path: Absolute path to the found weights file.
-
-    Raises:
-        FileNotFoundError: If the weights file is not found in any parent directory.
-                          Error message includes the current working directory
-                          and instructions for placing the weights file.
-
-    Examples:
-        >>> path = find_weights_path()
-        >>> print(path)
-        /path/to/xray_model_best.pth
-
-        >>> path = find_weights_path("xray_model_best.pth")
-    """
+    """Find model weights file including models/ folder."""
     cwd = Path.cwd().resolve()
-    for base in [cwd, *cwd.parents]:
-        candidate = base / filename
-        if candidate.exists():
-            return candidate
+
+    possible_paths = [
+        cwd / filename,
+        cwd / "models" / filename,
+        *[p / filename for p in cwd.parents],
+        *[p / "models" / filename for p in cwd.parents],
+    ]
+
+    for path in possible_paths:
+        if path.exists():
+            return path
 
     raise FileNotFoundError(
-        f"Missing {filename}. Expected it in {cwd} (or a parent). "
-        "Make sure the weights file is present in the runtime filesystem."
+        f"Missing {filename}. Checked: {possible_paths}"
     )
 
 
