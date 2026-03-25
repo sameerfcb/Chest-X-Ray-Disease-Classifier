@@ -31,10 +31,10 @@ cd Chest-X-Ray-Disease-Classifier
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-streamlit run app.py
+streamlit run app.py --server.port=7860
 ```
 
-Then open http://localhost:8501 and start uploading X-rays. The model spits out a prediction plus a heatmap showing which parts influenced the decision.
+Then open http://localhost:7860 and start uploading X-rays. The model spits out a prediction plus a heatmap showing which parts influenced the decision.
 
 If you want to see how everything was trained, there's a Jupyter notebook in the `.devcontainer/` folder with the full pipeline.
 
@@ -78,10 +78,10 @@ Result: +23.4% improvement. Not bad.
 ### Web app
 
 ```bash
-streamlit run app.py
+streamlit run app.py --server.port=7860
 ```
 
-Open http://localhost:8501 in your browser and start uploading X-rays.
+Open http://localhost:7860 in your browser and start uploading X-rays.
 
 ### In Python
 
