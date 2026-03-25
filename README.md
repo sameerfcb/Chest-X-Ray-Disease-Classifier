@@ -31,10 +31,10 @@ cd Chest-X-Ray-Disease-Classifier
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-python app.py
+streamlit run app.py
 ```
 
-Then open http://localhost:7860 and start uploading X-rays. The model spits out a prediction plus a heatmap showing which parts influenced the decision.
+Then open http://localhost:8501 and start uploading X-rays. The model spits out a prediction plus a heatmap showing which parts influenced the decision.
 
 If you want to see how everything was trained, there's a Jupyter notebook in the `.devcontainer/` folder with the full pipeline.
 
@@ -78,10 +78,10 @@ Result: +23.4% improvement. Not bad.
 ### Web app
 
 ```bash
-python app.py
+streamlit run app.py
 ```
 
-Open http://localhost:7860 in your browser and start uploading X-rays.
+Open http://localhost:8501 in your browser and start uploading X-rays.
 
 ### In Python
 
@@ -131,7 +131,7 @@ print(f"{label} ({confidence*100:.1f}%)")
 
 ```
 .
-├── app.py                  # Gradio web app
+├── app.py                  # Streamlit web app
 ├── requirements.txt        # Dependencies
 ├── xray_model_best.pth    # Best weights (use this one)
 ├── xray_model.pth         # Latest checkpoint
@@ -149,11 +149,11 @@ Used the [Kaggle chest X-ray dataset](https://www.kaggle.com/datasets/paultimoth
 
 ## Setup
 
-**Local:** Install requirements and run `python app.py`. That's it.
+**Local:** Install requirements and run `streamlit run app.py`. That's it.
 
 **Docker:** If you want everything containerized, just use the Dockerfile.
 
-**Cloud:** Can deploy to Hugging Face Spaces or AWS if you want it publicly accessible.
+**Cloud:** Can deploy to Streamlit Cloud, Heroku, AWS, or Google Cloud Run. See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed instructions.
 
 ## Important stuff
 

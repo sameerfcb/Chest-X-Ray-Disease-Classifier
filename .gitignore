@@ -133,3 +133,7 @@ flagged/
 *.pth
 *.pt
 xray_model*.pth
+
+# Streamlit secrets
+.streamlit/secrets.toml
+.streamlit/.streamlitrc
