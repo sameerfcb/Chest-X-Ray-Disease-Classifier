@@ -8,9 +8,9 @@ import torchvision.models as models
 import torchvision.transforms as transforms
 from PIL import Image
 
-from pytorch_grad_cam import GradCAM
-from pytorch_grad_cam.utils.image import show_cam_on_image
-from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
+from grad_cam import GradCAM
+from grad_cam.utils.image import show_cam_on_image
+from grad_cam.utils.model_targets import ClassifierOutputTarget
 
 
 def find_weights_path(filename: str = "xray_model.pth") -> Path:
